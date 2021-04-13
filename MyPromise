@@ -1,0 +1,126 @@
+const PENDDING = 'PENDDING'
+const FULFILLED = 'FULFULLED'
+const REJECTED = 'REJECTED'
+
+class MyPromise {
+  constructor(exector) {
+    this.status = PENDDING
+    this.value = null
+    this.reason = null
+    this.fulfilledCallback = []
+    this.failedCallback = []
+    
+    if (typeof exector !== 'function') {
+      throw new Error('promise params is not a function')
+    }
+
+    exector(this.resolve, this.reject)
+  }
+  static resolve(value) {
+    // 1. 如果是promise对象，就返回promise对象
+    if (value instanceof MyPromise) return value
+
+    // 2. 普通值的话我们需要创建一个promise对象，将其值最为resolve参数
+    return new MyPromise(resolve => resolve(value))
+  }
+
+  resolve = (value) => {
+    if (this.status === PENDDING) {
+      this.value = value
+      this.status = FULFILLED
+      if (this.status === FULFILLED) {
+        this.fulfilledCallback.reduce((_, callback) => callback(_), this.value)
+      }
+    }
+  }
+  
+  reject = (reason) => {
+    if (this.status === PENDDING) {
+      this.reason = reason
+      this.status = REJECTED
+      if (this.status === REJECTED) {
+        this.failedCallback.reduce((_, callback) => callback(_), this.reason)
+      }
+    }
+  }
+
+  then(successCallback, faildCallback) {
+    // 1. value => value 可以将上一个promise对象的值 给到当前then返回的promise对象，下个then就可以接受到
+    successCallback = successCallback instanceof Function ? successCallback : value => value
+    // 2. 如果时失败的状态的promise可以利用 reason => { throw reason} ，这样回调函数抛异常被catch捕获到当前then方法就是失败的状态promise，下个then就可以直接获取
+    faildCallback =  faildCallback instanceof Function ? faildCallback : reason => {throw reason}
+ 
+    const promise2 = new MyPromise((resolve, reject) => {
+      if (this.status === FULFILLED) {
+        setTimeout(() => {
+          try {
+            const successCallBackValue = successCallback(this.value)
+            resolvePromise(promise2, successCallBackValue, resolve, reject)
+
+          } catch (err) {
+            reject(err)
+          }
+        }, 0);
+      } else if (this.status === REJECTED) {
+        // 1. 对失败状态的处理与成功是一样的
+        // - 对失败的的回调函数做异常处理
+        // - 将失败函数的普通返回值作为下一个then方法成功函数的返回值
+        // - 如果返回的是promise对象，调用当前promise对象的then方法取得返回值，通过resolve或是reject方法传递给到下一个then回调中
+        // - promise对象自调用需要抛出异常
+        setTimeout(() => {
+          try {
+            const faildCallbackReason = faildCallback(this.reason)
+            resolvePromise(promise2, faildCallbackReason, resolve, reject)
+          } catch (err) {
+            reject(err)
+          }
+        }, 0);
+
+      } else {
+        // 2. 对pending状态的代码做处理
+        // - 对then方法的回调函数做异常处理，此时我们需要外部再用一个函数进行包裹，里面调用成功回调才能写try catch
+        // - 剩下与 FULFILLED && REJECTED 状态时的处理一样的
+
+        successCallback instanceof Function &&
+          this.fulfilledCallback.push(() => {
+          // 感觉这个定时器可有可无，then方法会先执行返回promise对象，回调函数会在thne方法之后执行，这里肯定是可以拿得到then方法返回的promise对象的
+            setTimeout(() => {
+              try {
+                const successCallBackValue = successCallback(this.value)
+                resolvePromise(promise2, successCallBackValue, resolve, reject)
+
+              } catch (err) {
+                reject(err)
+              }
+            }, 0);
+          })
+        faildCallback instanceof Function &&
+          this.failedCallback.push(() => {
+            setTimeout(() => {
+              try {
+                const faildCallbackReason = faildCallback(this.reason)
+                resolvePromise(promise2, faildCallbackReason, resolve, reject)
+              } catch (err) {
+                reject(err)
+              }
+            }, 0);
+          })
+      }
+    })
+    return promise2
+  }
+}
+
+function resolvePromise(selfPromise, returnVal, resolve, reject) {
+  if (returnVal === selfPromise) {
+    return reject(new TypeError('Chaining cycle detected for promise #<Promise>'))
+  }
+  if (returnVal instanceof MyPromise) {
+    returnVal.then(resolve, reject)
+  } else {
+    resolve(returnVal)
+  }
+}
+
+
+exports.default = MyPromise
